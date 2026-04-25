@@ -47,6 +47,7 @@ That is it. Each runner produces a platform-specific installer as a workflow art
 | `sign` | Code-sign the build (`'true'` or `'false'`) | `'false'` |
 | `artifact-name` | Name for the uploaded artifact | `<app-name>-<platform>-<arch>` |
 | `upload-artifact` | Upload the build as a workflow artifact (`'true'` or `'false'`) | `'true'` |
+| `shinyelectron-source` | Remotes-style source spec for the `shinyelectron` R package. Pin a tag or branch with `@v0.2.0` or `@some-branch`. Switch to `any::shinyelectron` once a CRAN release is available. | `'github::coatless-rpkg/shinyelectron'` |
 
 ## Outputs
 

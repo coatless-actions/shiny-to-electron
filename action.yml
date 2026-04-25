@@ -59,6 +59,15 @@ inputs:
     description: 'Upload the build output as a workflow artifact ("true" or "false")'
     required: false
     default: 'true'
+  shinyelectron-source:
+    description: |
+      Remotes-style source spec for the shinyelectron R package, passed to
+      r-lib/actions/setup-r-dependencies. Defaults to the GitHub repo since
+      shinyelectron is not yet on CRAN. Pin to a tag or branch by suffixing
+      "@v0.2.0" or "@some-branch", or switch to "any::shinyelectron" once a
+      CRAN release is available.
+    required: false
+    default: 'github::coatless-rpkg/shinyelectron'
 
 outputs:
   electron-app-path:
@@ -169,7 +178,7 @@ runs:
       uses: r-lib/actions/setup-r-dependencies@v2
       with:
         extra-packages: |
-          any::shinyelectron
+          ${{ inputs.shinyelectron-source }}
           any::shinylive
 
     - name: Install Python dependencies

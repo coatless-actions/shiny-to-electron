@@ -12,12 +12,31 @@ permissions:
 
 jobs:
   test:
-    name: Test (${{ matrix.os }})
+    name: ${{ matrix.runtime }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          # shinylive: WebAssembly runtime in the browser, no native R needed.
+          # Should work on every runner.
+          - { os: ubuntu-latest,  runtime: shinylive }
+          - { os: macos-latest,   runtime: shinylive }
+          - { os: windows-latest, runtime: shinylive }
+
+          # system: spawn the R installed by setup-r on the runner.
+          - { os: ubuntu-latest,  runtime: system }
+          - { os: macos-latest,   runtime: system }
+          - { os: windows-latest, runtime: system }
+
+          # bundled: embed a portable R runtime. Not available on Linux.
+          - { os: macos-latest,   runtime: bundled }
+          - { os: windows-latest, runtime: bundled }
+
+          # auto-download: fetch a portable R on first launch. Not available
+          # on Linux.
+          - { os: macos-latest,   runtime: auto-download }
+          - { os: windows-latest, runtime: auto-download }
 
     steps:
       - name: Checkout the action
@@ -48,10 +67,8 @@ jobs:
         uses: ./
         with:
           appdir: demo-app
-          app-name: shiny-to-electron-demo
-          # Shinylive avoids needing a portable R runtime, which is the
-          # smoke test most likely to succeed on every runner.
-          runtime-strategy: shinylive
+          app-name: shiny-to-electron-demo-${{ matrix.runtime }}
+          runtime-strategy: ${{ matrix.runtime }}
           upload-artifact: 'false'
 
       - name: Confirm the action produced output paths
