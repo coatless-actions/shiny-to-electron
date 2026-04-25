@@ -1,0 +1,66 @@
+name: Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout the action
+        uses: actions/checkout@v6
+
+      - name: Create a tiny demo Shiny app
+        shell: bash
+        run: |
+          mkdir -p demo-app
+          cat > demo-app/app.R <<'EOF'
+          library(shiny)
+
+          ui <- fluidPage(
+            titlePanel("Hello shiny-to-electron"),
+            sliderInput("n", "n:", 1, 100, 50),
+            textOutput("out")
+          )
+
+          server <- function(input, output, session) {
+            output$out <- renderText(paste("You picked:", input$n))
+          }
+
+          shinyApp(ui, server)
+          EOF
+
+      - name: Build the demo app with the action
+        id: build
+        uses: ./
+        with:
+          appdir: demo-app
+          app-name: shiny-to-electron-demo
+          # Shinylive avoids needing a portable R runtime, which is the
+          # smoke test most likely to succeed on every runner.
+          runtime-strategy: shinylive
+          upload-artifact: 'false'
+
+      - name: Confirm the action produced output paths
+        shell: bash
+        run: |
+          echo "electron-app-path: ${{ steps.build.outputs.electron-app-path }}"
+          echo "dist-path:         ${{ steps.build.outputs.dist-path }}"
+          echo "app-type:          ${{ steps.build.outputs.app-type }}"
+          if [ -z "${{ steps.build.outputs.electron-app-path }}" ]; then
+            echo "::error::electron-app-path output was empty"
+            exit 1
+          fi

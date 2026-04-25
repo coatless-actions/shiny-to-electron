@@ -1,0 +1,279 @@
+name: 'Shiny to Electron'
+description: 'Build a Shiny app as an Electron desktop installer using shinyelectron'
+author: 'James J. Balamuta'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  appdir:
+    description: 'Path to the Shiny app directory inside the repository'
+    required: false
+    default: 'app'
+  app-name:
+    description: 'Display name of the application (default: appdir basename)'
+    required: false
+    default: ''
+  app-type:
+    description: 'Application type: "r-shiny" or "py-shiny" (default: autodetect)'
+    required: false
+    default: ''
+  runtime-strategy:
+    description: 'Runtime strategy: shinylive, bundled, system, auto-download, or container (default: value in _shinyelectron.yml or shinylive)'
+    required: false
+    default: ''
+  platform:
+    description: 'Target platform: mac, win, or linux (default: derived from runner.os)'
+    required: false
+    default: ''
+  arch:
+    description: 'Target architecture: x64 or arm64 (default: derived from runner.arch)'
+    required: false
+    default: ''
+  destdir:
+    description: 'Build output directory'
+    required: false
+    default: 'build'
+  node-version:
+    description: 'Node.js version to install'
+    required: false
+    default: '22'
+  r-version:
+    description: 'R version to install (release, devel, oldrel, or specific version like "4.4.1")'
+    required: false
+    default: 'release'
+  python-version:
+    description: 'Python version to install (only used for py-shiny apps)'
+    required: false
+    default: '3.12'
+  sign:
+    description: 'Whether to code-sign the build ("true" or "false"). Provide signing credentials via env: see https://r-pkg.thecoatlessprofessor.com/shinyelectron/articles/code-signing.html'
+    required: false
+    default: 'false'
+  artifact-name:
+    description: 'Name for the uploaded build artifact (default: <app-name>-<platform>-<arch>)'
+    required: false
+    default: ''
+  upload-artifact:
+    description: 'Upload the build output as a workflow artifact ("true" or "false")'
+    required: false
+    default: 'true'
+
+outputs:
+  electron-app-path:
+    description: 'Path to the built Electron application directory'
+    value: ${{ steps.build.outputs.electron-app-path }}
+  dist-path:
+    description: 'Path to the dist directory containing installers'
+    value: ${{ steps.build.outputs.dist-path }}
+  artifact-name:
+    description: 'Name used for the uploaded artifact'
+    value: ${{ steps.resolve.outputs.artifact-name }}
+  app-type:
+    description: 'Resolved app type: "r-shiny" or "py-shiny"'
+    value: ${{ steps.resolve.outputs.app-type }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve platform, arch, app type, names
+      id: resolve
+      shell: bash
+      run: |
+        # ---------- platform ----------
+        if [ -z "${{ inputs.platform }}" ]; then
+          case "${{ runner.os }}" in
+            Linux)   PLATFORM="linux" ;;
+            macOS)   PLATFORM="mac" ;;
+            Windows) PLATFORM="win" ;;
+            *) echo "::error::Unsupported runner.os: ${{ runner.os }}"; exit 1 ;;
+          esac
+        else
+          PLATFORM="${{ inputs.platform }}"
+        fi
+
+        # ---------- arch ----------
+        if [ -z "${{ inputs.arch }}" ]; then
+          case "${{ runner.arch }}" in
+            X64)   ARCH="x64" ;;
+            ARM64) ARCH="arm64" ;;
+            *) echo "::error::Unsupported runner.arch: ${{ runner.arch }}"; exit 1 ;;
+          esac
+        else
+          ARCH="${{ inputs.arch }}"
+        fi
+
+        # ---------- app-type (autodetect when blank) ----------
+        APP_TYPE="${{ inputs.app-type }}"
+        if [ -z "$APP_TYPE" ]; then
+          if [ -f "${{ inputs.appdir }}/app.py" ] || \
+             [ -f "${{ inputs.appdir }}/requirements.txt" ] || \
+             [ -f "${{ inputs.appdir }}/pyproject.toml" ]; then
+            APP_TYPE="py-shiny"
+          else
+            APP_TYPE="r-shiny"
+          fi
+        fi
+
+        # ---------- app-name (default to appdir basename) ----------
+        APP_NAME="${{ inputs.app-name }}"
+        if [ -z "$APP_NAME" ]; then
+          APP_NAME=$(basename "${{ inputs.appdir }}")
+        fi
+
+        # ---------- artifact-name ----------
+        ARTIFACT_NAME="${{ inputs.artifact-name }}"
+        if [ -z "$ARTIFACT_NAME" ]; then
+          ARTIFACT_NAME="$APP_NAME-$PLATFORM-$ARCH"
+        fi
+
+        echo "platform=$PLATFORM"             >> "$GITHUB_OUTPUT"
+        echo "arch=$ARCH"                     >> "$GITHUB_OUTPUT"
+        echo "app-type=$APP_TYPE"             >> "$GITHUB_OUTPUT"
+        echo "app-name=$APP_NAME"             >> "$GITHUB_OUTPUT"
+        echo "artifact-name=$ARTIFACT_NAME"   >> "$GITHUB_OUTPUT"
+
+        echo "Resolved configuration:"
+        echo "  platform:      $PLATFORM"
+        echo "  arch:          $ARCH"
+        echo "  app-type:      $APP_TYPE"
+        echo "  app-name:      $APP_NAME"
+        echo "  artifact-name: $ARTIFACT_NAME"
+
+    - name: Setup R
+      uses: r-lib/actions/setup-r@v2
+      with:
+        r-version: ${{ inputs.r-version }}
+        use-public-rspm: true
+
+    - name: Setup Python
+      if: steps.resolve.outputs.app-type == 'py-shiny'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+        cache-dependency-path: '**/package-lock.json'
+
+    - name: Install system dependencies (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcurl4-openssl-dev libxml2-dev libssl-dev
+
+    - name: Install R dependencies
+      uses: r-lib/actions/setup-r-dependencies@v2
+      with:
+        extra-packages: |
+          any::shinyelectron
+          any::shinylive
+
+    - name: Install Python dependencies
+      if: steps.resolve.outputs.app-type == 'py-shiny'
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install shiny shinylive
+
+    - name: Verify Shiny app exists
+      shell: bash
+      run: |
+        if [ ! -d "${{ inputs.appdir }}" ]; then
+          echo "::error::App directory '${{ inputs.appdir }}' not found"
+          echo "Set the 'appdir' input to the path of your Shiny app."
+          exit 1
+        fi
+        echo "Found app directory: ${{ inputs.appdir }}"
+        ls -la "${{ inputs.appdir }}"
+
+    - name: Build Electron app
+      id: build
+      shell: bash
+      env:
+        SE_APPDIR:           ${{ inputs.appdir }}
+        SE_DESTDIR:          ${{ inputs.destdir }}
+        SE_APP_NAME:         ${{ steps.resolve.outputs.app-name }}
+        SE_APP_TYPE:         ${{ steps.resolve.outputs.app-type }}
+        SE_PLATFORM:         ${{ steps.resolve.outputs.platform }}
+        SE_ARCH:             ${{ steps.resolve.outputs.arch }}
+        SE_RUNTIME_STRATEGY: ${{ inputs.runtime-strategy }}
+        SE_SIGN:             ${{ inputs.sign }}
+      run: |
+        Rscript -e '
+          library(shinyelectron)
+
+          cat("=== System diagnostics ===\n")
+          sitrep_electron_system(verbose = TRUE)
+
+          cat("\n=== Building Electron app ===\n")
+          build_args <- list(
+            appdir    = Sys.getenv("SE_APPDIR"),
+            destdir   = Sys.getenv("SE_DESTDIR"),
+            app_name  = Sys.getenv("SE_APP_NAME"),
+            app_type  = Sys.getenv("SE_APP_TYPE"),
+            platform  = Sys.getenv("SE_PLATFORM"),
+            arch      = Sys.getenv("SE_ARCH"),
+            sign      = identical(tolower(Sys.getenv("SE_SIGN")), "true"),
+            overwrite = TRUE,
+            verbose   = TRUE
+          )
+          rs <- Sys.getenv("SE_RUNTIME_STRATEGY")
+          if (nzchar(rs)) build_args[["runtime_strategy"]] <- rs
+
+          result <- do.call(export, build_args)
+
+          electron_app <- result[["electron_app"]]
+          dist_path <- file.path(electron_app, "dist")
+
+          cat("\n=== Build complete ===\n")
+          cat("electron-app-path:", electron_app, "\n")
+          cat("dist-path:        ", dist_path, "\n")
+
+          gh_output <- Sys.getenv("GITHUB_OUTPUT")
+          if (nzchar(gh_output)) {
+            con <- file(gh_output, open = "a")
+            on.exit(close(con), add = TRUE)
+            writeLines(c(
+              paste0("electron-app-path=", electron_app),
+              paste0("dist-path=", dist_path)
+            ), con = con)
+          }
+        '
+
+    - name: List build outputs
+      shell: bash
+      run: |
+        echo "=== Build outputs ==="
+        DIST="${{ steps.build.outputs.dist-path }}"
+        if [ -d "$DIST" ]; then
+          find "$DIST" -type f \( \
+            -name "*.dmg" -o \
+            -name "*.exe" -o \
+            -name "*.AppImage" -o \
+            -name "*.deb" -o \
+            -name "*.rpm" -o \
+            -name "*.zip" \
+          \) | head -20
+        else
+          echo "(no dist directory found at $DIST)"
+        fi
+
+    - name: Upload build artifacts
+      if: inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.resolve.outputs.artifact-name }}
+        path: |
+          ${{ steps.build.outputs.dist-path }}/**/*.dmg
+          ${{ steps.build.outputs.dist-path }}/**/*.exe
+          ${{ steps.build.outputs.dist-path }}/**/*.AppImage
+          ${{ steps.build.outputs.dist-path }}/**/*.deb
+          ${{ steps.build.outputs.dist-path }}/**/*.rpm
+        if-no-files-found: warn
+        retention-days: 30
