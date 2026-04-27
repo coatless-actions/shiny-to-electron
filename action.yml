@@ -212,46 +212,52 @@ runs:
         SE_RUNTIME_STRATEGY: ${{ inputs.runtime-strategy }}
         SE_SIGN:             ${{ inputs.sign }}
       run: |
-        Rscript -e '
-          library(shinyelectron)
+        # Write the build script to a temp file rather than passing it via
+        # Rscript -e '...'. R 4.6.0 on Windows segfaults when given a
+        # multi-line single-quoted -e argument under Git Bash; using a
+        # script file sidesteps every -e quoting quirk on every platform.
+        SE_SCRIPT="${RUNNER_TEMP:-/tmp}/shinyelectron-build.R"
+        cat > "$SE_SCRIPT" <<'EOF'
+        library(shinyelectron)
 
-          cat("=== System diagnostics ===\n")
-          sitrep_electron_system(verbose = TRUE)
+        cat("=== System diagnostics ===\n")
+        sitrep_electron_system(verbose = TRUE)
 
-          cat("\n=== Building Electron app ===\n")
-          build_args <- list(
-            appdir    = Sys.getenv("SE_APPDIR"),
-            destdir   = Sys.getenv("SE_DESTDIR"),
-            app_name  = Sys.getenv("SE_APP_NAME"),
-            app_type  = Sys.getenv("SE_APP_TYPE"),
-            platform  = Sys.getenv("SE_PLATFORM"),
-            arch      = Sys.getenv("SE_ARCH"),
-            sign      = identical(tolower(Sys.getenv("SE_SIGN")), "true"),
-            overwrite = TRUE,
-            verbose   = TRUE
-          )
-          rs <- Sys.getenv("SE_RUNTIME_STRATEGY")
-          if (nzchar(rs)) build_args[["runtime_strategy"]] <- rs
+        cat("\n=== Building Electron app ===\n")
+        build_args <- list(
+          appdir    = Sys.getenv("SE_APPDIR"),
+          destdir   = Sys.getenv("SE_DESTDIR"),
+          app_name  = Sys.getenv("SE_APP_NAME"),
+          app_type  = Sys.getenv("SE_APP_TYPE"),
+          platform  = Sys.getenv("SE_PLATFORM"),
+          arch      = Sys.getenv("SE_ARCH"),
+          sign      = identical(tolower(Sys.getenv("SE_SIGN")), "true"),
+          overwrite = TRUE,
+          verbose   = TRUE
+        )
+        rs <- Sys.getenv("SE_RUNTIME_STRATEGY")
+        if (nzchar(rs)) build_args[["runtime_strategy"]] <- rs
 
-          result <- do.call(export, build_args)
+        result <- do.call(export, build_args)
 
-          electron_app <- result[["electron_app"]]
-          dist_path <- file.path(electron_app, "dist")
+        electron_app <- result[["electron_app"]]
+        dist_path <- file.path(electron_app, "dist")
 
-          cat("\n=== Build complete ===\n")
-          cat("electron-app-path:", electron_app, "\n")
-          cat("dist-path:        ", dist_path, "\n")
+        cat("\n=== Build complete ===\n")
+        cat("electron-app-path:", electron_app, "\n")
+        cat("dist-path:        ", dist_path, "\n")
 
-          gh_output <- Sys.getenv("GITHUB_OUTPUT")
-          if (nzchar(gh_output)) {
-            con <- file(gh_output, open = "a")
-            on.exit(close(con), add = TRUE)
-            writeLines(c(
-              paste0("electron-app-path=", electron_app),
-              paste0("dist-path=", dist_path)
-            ), con = con)
-          }
-        '
+        gh_output <- Sys.getenv("GITHUB_OUTPUT")
+        if (nzchar(gh_output)) {
+          con <- file(gh_output, open = "a")
+          on.exit(close(con), add = TRUE)
+          writeLines(c(
+            paste0("electron-app-path=", electron_app),
+            paste0("dist-path=", dist_path)
+          ), con = con)
+        }
+        EOF
+        Rscript "$SE_SCRIPT"
 
     - name: List build outputs
       shell: bash
