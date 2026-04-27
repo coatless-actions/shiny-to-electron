@@ -197,6 +197,10 @@ If you need finer control than the action provides, use the [bundled template](h
 
 Pin the action by major version (`@v1`) for painless upgrades, by full tag (`@v1.0.0`) for strict reproducibility, or by SHA for the strictest pin.
 
+## Demo
+
+[`coatless-r-n-d/electronification-shiny-app-action`](https://github.com/coatless-r-n-d/electronification-shiny-app-action) is a small standalone repo that wires this action up against a tiny Shiny app. Its workflow runs the action across `shinylive` and `bundled` runtime strategies on Linux, macOS, and Windows, and tag pushes attach the resulting installers to a GitHub Release. Use it as a copy-paste starting point.
+
 ## Documentation
 
 - [shinyelectron home](https://r-pkg.thecoatlessprofessor.com/shinyelectron/)
