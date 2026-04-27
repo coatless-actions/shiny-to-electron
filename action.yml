@@ -201,7 +201,10 @@ runs:
 
     - name: Build Electron app
       id: build
-      shell: bash
+      # GitHub Actions writes `run:` to a temp file and passes its path
+      # as {0}. That avoids the Windows R 4.6.0 + Git Bash bug that
+      # segfaults Rscript on any multi-line single-quoted -e argument.
+      shell: Rscript {0}
       env:
         SE_APPDIR:           ${{ inputs.appdir }}
         SE_DESTDIR:          ${{ inputs.destdir }}
@@ -212,12 +215,6 @@ runs:
         SE_RUNTIME_STRATEGY: ${{ inputs.runtime-strategy }}
         SE_SIGN:             ${{ inputs.sign }}
       run: |
-        # Write the build script to a temp file rather than passing it via
-        # Rscript -e '...'. R 4.6.0 on Windows segfaults when given a
-        # multi-line single-quoted -e argument under Git Bash; using a
-        # script file sidesteps every -e quoting quirk on every platform.
-        SE_SCRIPT="${RUNNER_TEMP:-/tmp}/shinyelectron-build.R"
-        cat > "$SE_SCRIPT" <<'EOF'
         library(shinyelectron)
 
         cat("=== System diagnostics ===\n")
@@ -256,8 +253,6 @@ runs:
             paste0("dist-path=", dist_path)
           ), con = con)
         }
-        EOF
-        Rscript "$SE_SCRIPT"
 
     - name: List build outputs
       shell: bash
