@@ -71,10 +71,10 @@ jobs:
           runtime-strategy: ${{ matrix.runtime }}
           upload-artifact: 'false'
 
-      # When the build step fails on Windows we want to know which package
-      # actually crashes the R process. setup-r and setup-r-dependencies
-      # have already run inside the action above, so R and shinyelectron
-      # are installed; this step just probes which library() call dies.
+      # When the build step fails on Windows we want to isolate where R
+      # dies. setup-r and setup-r-dependencies have already run inside
+      # the action above, so R and shinyelectron are installed; this
+      # step probes a sequence of progressively richer R invocations.
       - name: Diagnose package load (Windows only)
         if: always() && failure() && runner.os == 'Windows'
         shell: bash
@@ -82,15 +82,41 @@ jobs:
           set +e
           echo "--- R startup ---"
           Rscript -e 'cat("R works:", R.version.string, "\n")' && echo "R OK" || echo "R STARTUP FAILED"
+
           echo "--- Imports one at a time ---"
           for pkg in cli fs jsonlite processx whisker rappdirs yaml; do
             echo -n "  $pkg: "
             Rscript -e "suppressPackageStartupMessages(library($pkg)); cat('OK\n')" \
               || echo "FAILED"
           done
-          echo "--- shinyelectron itself ---"
+
+          echo "--- shinyelectron one-line load ---"
           Rscript -e "suppressPackageStartupMessages(library(shinyelectron)); cat('shinyelectron OK\n')" \
-            || echo "shinyelectron LOAD FAILED"
+            && echo "ONE-LINE OK" || echo "ONE-LINE FAILED"
+
+          echo "--- shinyelectron in a multi-line heredoc (mirrors action.yml) ---"
+          Rscript -e '
+            library(shinyelectron)
+            cat("heredoc cat ran\n")
+          ' && echo "HEREDOC OK" || echo "HEREDOC FAILED"
+
+          echo "--- sitrep_electron_system() call ---"
+          Rscript -e '
+            library(shinyelectron)
+            cat("about to call sitrep\n")
+            sitrep_electron_system(verbose = TRUE)
+            cat("sitrep returned\n")
+          ' && echo "SITREP OK" || echo "SITREP FAILED"
+
+          echo "--- export(build = FALSE) call ---"
+          Rscript -e '
+            library(shinyelectron)
+            cat("about to call export(build=FALSE)\n")
+            res <- export(appdir = "demo-app", destdir = "build-diag",
+                          app_type = "r-shiny", runtime_strategy = "shinylive",
+                          build = FALSE, overwrite = TRUE, verbose = TRUE)
+            cat("export returned\n")
+          ' && echo "EXPORT-NOBUILD OK" || echo "EXPORT-NOBUILD FAILED"
 
       - name: Confirm the action produced output paths
         shell: bash
