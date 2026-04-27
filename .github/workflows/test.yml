@@ -94,11 +94,33 @@ jobs:
           Rscript -e "suppressPackageStartupMessages(library(shinyelectron)); cat('shinyelectron OK\n')" \
             && echo "ONE-LINE OK" || echo "ONE-LINE FAILED"
 
-          echo "--- shinyelectron in a multi-line heredoc (mirrors action.yml) ---"
+          echo "--- Multi-line heredoc, no shinyelectron ---"
+          Rscript -e '
+            cat("plain heredoc cat ran\n")
+          ' && echo "PLAIN-HEREDOC OK" || echo "PLAIN-HEREDOC FAILED"
+
+          echo "--- Multi-line heredoc, library(cli) ---"
+          Rscript -e '
+            library(cli)
+            cat("cli heredoc cat ran\n")
+          ' && echo "CLI-HEREDOC OK" || echo "CLI-HEREDOC FAILED"
+
+          echo "--- Multi-line heredoc, library(shinyelectron) only (no cat) ---"
+          Rscript -e '
+            library(shinyelectron)
+          ' && echo "SE-HEREDOC-NOCAT OK" || echo "SE-HEREDOC-NOCAT FAILED"
+
+          echo "--- Multi-line heredoc, suppressed library(shinyelectron) + cat ---"
+          Rscript -e '
+            suppressPackageStartupMessages(library(shinyelectron))
+            cat("suppressed heredoc cat ran\n")
+          ' && echo "SE-HEREDOC-SUPP OK" || echo "SE-HEREDOC-SUPP FAILED"
+
+          echo "--- Multi-line heredoc, library(shinyelectron) + cat (mirrors action.yml) ---"
           Rscript -e '
             library(shinyelectron)
             cat("heredoc cat ran\n")
-          ' && echo "HEREDOC OK" || echo "HEREDOC FAILED"
+          ' && echo "SE-HEREDOC OK" || echo "SE-HEREDOC FAILED"
 
           echo "--- sitrep_electron_system() call ---"
           Rscript -e '
