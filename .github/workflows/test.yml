@@ -1,0 +1,152 @@
+name: Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.runtime }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # shinylive: WebAssembly runtime in the browser, no native R needed.
+          # Should work on every runner.
+          - { os: ubuntu-latest,  runtime: shinylive }
+          - { os: macos-latest,   runtime: shinylive }
+          - { os: windows-latest, runtime: shinylive }
+
+          # system: spawn the R installed by setup-r on the runner.
+          - { os: ubuntu-latest,  runtime: system }
+          - { os: macos-latest,   runtime: system }
+          - { os: windows-latest, runtime: system }
+
+          # bundled: embed a portable R runtime. Not available on Linux.
+          - { os: macos-latest,   runtime: bundled }
+          - { os: windows-latest, runtime: bundled }
+
+          # auto-download: fetch a portable R on first launch. Not available
+          # on Linux.
+          - { os: macos-latest,   runtime: auto-download }
+          - { os: windows-latest, runtime: auto-download }
+
+    steps:
+      - name: Checkout the action
+        uses: actions/checkout@v6
+
+      - name: Create a tiny demo Shiny app
+        shell: bash
+        run: |
+          mkdir -p demo-app
+          cat > demo-app/app.R <<'EOF'
+          library(shiny)
+
+          ui <- fluidPage(
+            titlePanel("Hello shiny-to-electron"),
+            sliderInput("n", "n:", 1, 100, 50),
+            textOutput("out")
+          )
+
+          server <- function(input, output, session) {
+            output$out <- renderText(paste("You picked:", input$n))
+          }
+
+          shinyApp(ui, server)
+          EOF
+
+      - name: Build the demo app with the action
+        id: build
+        uses: ./
+        with:
+          appdir: demo-app
+          app-name: shiny-to-electron-demo-${{ matrix.runtime }}
+          runtime-strategy: ${{ matrix.runtime }}
+          upload-artifact: 'false'
+
+      # When the build step fails on Windows we want to isolate where R
+      # dies. setup-r and setup-r-dependencies have already run inside
+      # the action above, so R and shinyelectron are installed; this
+      # step probes a sequence of progressively richer R invocations.
+      - name: Diagnose package load (Windows only)
+        if: always() && failure() && runner.os == 'Windows'
+        shell: bash
+        run: |
+          set +e
+          echo "--- R startup ---"
+          Rscript -e 'cat("R works:", R.version.string, "\n")' && echo "R OK" || echo "R STARTUP FAILED"
+
+          echo "--- Imports one at a time ---"
+          for pkg in cli fs jsonlite processx whisker rappdirs yaml; do
+            echo -n "  $pkg: "
+            Rscript -e "suppressPackageStartupMessages(library($pkg)); cat('OK\n')" \
+              || echo "FAILED"
+          done
+
+          echo "--- shinyelectron one-line load ---"
+          Rscript -e "suppressPackageStartupMessages(library(shinyelectron)); cat('shinyelectron OK\n')" \
+            && echo "ONE-LINE OK" || echo "ONE-LINE FAILED"
+
+          echo "--- Multi-line heredoc, no shinyelectron ---"
+          Rscript -e '
+            cat("plain heredoc cat ran\n")
+          ' && echo "PLAIN-HEREDOC OK" || echo "PLAIN-HEREDOC FAILED"
+
+          echo "--- Multi-line heredoc, library(cli) ---"
+          Rscript -e '
+            library(cli)
+            cat("cli heredoc cat ran\n")
+          ' && echo "CLI-HEREDOC OK" || echo "CLI-HEREDOC FAILED"
+
+          echo "--- Multi-line heredoc, library(shinyelectron) only (no cat) ---"
+          Rscript -e '
+            library(shinyelectron)
+          ' && echo "SE-HEREDOC-NOCAT OK" || echo "SE-HEREDOC-NOCAT FAILED"
+
+          echo "--- Multi-line heredoc, suppressed library(shinyelectron) + cat ---"
+          Rscript -e '
+            suppressPackageStartupMessages(library(shinyelectron))
+            cat("suppressed heredoc cat ran\n")
+          ' && echo "SE-HEREDOC-SUPP OK" || echo "SE-HEREDOC-SUPP FAILED"
+
+          echo "--- Multi-line heredoc, library(shinyelectron) + cat (mirrors action.yml) ---"
+          Rscript -e '
+            library(shinyelectron)
+            cat("heredoc cat ran\n")
+          ' && echo "SE-HEREDOC OK" || echo "SE-HEREDOC FAILED"
+
+          echo "--- sitrep_electron_system() call ---"
+          Rscript -e '
+            library(shinyelectron)
+            cat("about to call sitrep\n")
+            sitrep_electron_system(verbose = TRUE)
+            cat("sitrep returned\n")
+          ' && echo "SITREP OK" || echo "SITREP FAILED"
+
+          echo "--- export(build = FALSE) call ---"
+          Rscript -e '
+            library(shinyelectron)
+            cat("about to call export(build=FALSE)\n")
+            res <- export(appdir = "demo-app", destdir = "build-diag",
+                          app_type = "r-shiny", runtime_strategy = "shinylive",
+                          build = FALSE, overwrite = TRUE, verbose = TRUE)
+            cat("export returned\n")
+          ' && echo "EXPORT-NOBUILD OK" || echo "EXPORT-NOBUILD FAILED"
+
+      - name: Confirm the action produced output paths
+        shell: bash
+        run: |
+          echo "electron-app-path: ${{ steps.build.outputs.electron-app-path }}"
+          echo "dist-path:         ${{ steps.build.outputs.dist-path }}"
+          echo "app-type:          ${{ steps.build.outputs.app-type }}"
+          if [ -z "${{ steps.build.outputs.electron-app-path }}" ]; then
+            echo "::error::electron-app-path output was empty"
+            exit 1
+          fi
