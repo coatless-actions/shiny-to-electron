@@ -277,11 +277,17 @@ runs:
       uses: actions/upload-artifact@v7
       with:
         name: ${{ steps.resolve.outputs.artifact-name }}
+        # Match installers at the top of dist/ only. A recursive glob
+        # also picks up files inside electron-builder's unpacked tree
+        # (dist/win-unpacked/, dist/mac-arm64/, dist/linux-unpacked/),
+        # which holds the bundled runtime binaries (R.exe, Rscript.exe,
+        # tclsh86.exe, and friends). Those are not release artifacts.
         path: |
-          ${{ steps.build.outputs.dist-path }}/**/*.dmg
-          ${{ steps.build.outputs.dist-path }}/**/*.exe
-          ${{ steps.build.outputs.dist-path }}/**/*.AppImage
-          ${{ steps.build.outputs.dist-path }}/**/*.deb
-          ${{ steps.build.outputs.dist-path }}/**/*.rpm
+          ${{ steps.build.outputs.dist-path }}/*.dmg
+          ${{ steps.build.outputs.dist-path }}/*.exe
+          ${{ steps.build.outputs.dist-path }}/*.AppImage
+          ${{ steps.build.outputs.dist-path }}/*.deb
+          ${{ steps.build.outputs.dist-path }}/*.rpm
+          ${{ steps.build.outputs.dist-path }}/*.zip
         if-no-files-found: warn
         retention-days: 30
