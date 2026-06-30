@@ -186,10 +186,8 @@ runs:
       shell: bash
       run: |
         python -m pip install --upgrade pip
-        # pip can intermittently leave shinylive partially installed under heavy
-        # concurrent load (for example a large build matrix), which then surfaces
-        # downstream as "No module named shinylive" during the shinylive export.
-        # Retry until the module actually imports.
+        # Install shiny + shinylive, retrying until the module imports (pip can
+        # occasionally leave it partial under heavy concurrent load).
         for attempt in 1 2 3; do
           python -m pip install shiny shinylive
           if python -c "import shinylive" 2>/dev/null; then
@@ -203,6 +201,15 @@ runs:
           echo "::error::shinylive could not be imported after installation"
           exit 1
         }
+        # shinyelectron resolves the `shinylive` console script via PATH, not via
+        # this interpreter. CI runners can carry a shadowing `shinylive` script
+        # from another python that lacks the package, which surfaces as
+        # "No module named shinylive" during the export even though the install
+        # above succeeded. Put THIS interpreter's bin first so the console script
+        # on PATH is the one backed by the python that has the package.
+        PYBIN="$(python -c 'import sys, os; print(os.path.dirname(sys.executable))')"
+        echo "$PYBIN" >> "$GITHUB_PATH"
+        "$PYBIN/shinylive" --version
 
     - name: Verify Shiny app exists
       shell: bash
