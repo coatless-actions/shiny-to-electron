@@ -174,20 +174,17 @@ runs:
         sudo apt-get update
         sudo apt-get install -y libcurl4-openssl-dev libxml2-dev libssl-dev
 
-    - name: Install R dependencies
-      uses: r-lib/actions/setup-r-dependencies@v2
-      with:
-        extra-packages: |
-          ${{ inputs.shinyelectron-source }}
-          any::shinylive
-
     - name: Install Python dependencies
       if: steps.resolve.outputs.app-type == 'py-shiny'
       shell: bash
       run: |
         python -m pip install --upgrade pip
-        # Install shiny + shinylive, retrying until the module imports (pip can
-        # occasionally leave it partial under heavy concurrent load).
+        # Install shiny + shinylive BEFORE setup-r-dependencies. Installing R
+        # packages with pak can perturb the Python interpreter the shinylive
+        # console script later resolves to, surfacing as "No module named
+        # shinylive" during the export even though the package is installed;
+        # doing the Python install first keeps that interpreter stable. Retry
+        # until the module imports (pip can leave it partial under heavy load).
         for attempt in 1 2 3; do
           python -m pip install shiny shinylive
           if python -c "import shinylive" 2>/dev/null; then
@@ -201,15 +198,18 @@ runs:
           echo "::error::shinylive could not be imported after installation"
           exit 1
         }
-        # shinyelectron resolves the `shinylive` console script via PATH, not via
-        # this interpreter. CI runners can carry a shadowing `shinylive` script
-        # from another python that lacks the package, which surfaces as
-        # "No module named shinylive" during the export even though the install
-        # above succeeded. Put THIS interpreter's bin first so the console script
-        # on PATH is the one backed by the python that has the package.
+        # Put this interpreter's bin first so the console script downstream tools
+        # resolve via PATH is the one backed by the python that has the package.
         PYBIN="$(python -c 'import sys, os; print(os.path.dirname(sys.executable))')"
         echo "$PYBIN" >> "$GITHUB_PATH"
         "$PYBIN/shinylive" --version
+
+    - name: Install R dependencies
+      uses: r-lib/actions/setup-r-dependencies@v2
+      with:
+        extra-packages: |
+          ${{ inputs.shinyelectron-source }}
+          any::shinylive
 
     - name: Verify Shiny app exists
       shell: bash
