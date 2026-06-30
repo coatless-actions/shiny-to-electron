@@ -174,42 +174,19 @@ runs:
         sudo apt-get update
         sudo apt-get install -y libcurl4-openssl-dev libxml2-dev libssl-dev
 
-    - name: Install Python dependencies
-      if: steps.resolve.outputs.app-type == 'py-shiny'
-      shell: bash
-      run: |
-        python -m pip install --upgrade pip
-        # Install shiny + shinylive BEFORE setup-r-dependencies. Installing R
-        # packages with pak can perturb the Python interpreter the shinylive
-        # console script later resolves to, surfacing as "No module named
-        # shinylive" during the export even though the package is installed;
-        # doing the Python install first keeps that interpreter stable. Retry
-        # until the module imports (pip can leave it partial under heavy load).
-        for attempt in 1 2 3; do
-          python -m pip install shiny shinylive
-          if python -c "import shinylive" 2>/dev/null; then
-            echo "shinylive import verified (attempt $attempt)"
-            break
-          fi
-          echo "shinylive not importable after attempt $attempt; reinstalling..."
-          python -m pip install --force-reinstall --no-cache-dir shiny shinylive
-        done
-        python -c "import shinylive" || {
-          echo "::error::shinylive could not be imported after installation"
-          exit 1
-        }
-        # Put this interpreter's bin first so the console script downstream tools
-        # resolve via PATH is the one backed by the python that has the package.
-        PYBIN="$(python -c 'import sys, os; print(os.path.dirname(sys.executable))')"
-        echo "$PYBIN" >> "$GITHUB_PATH"
-        "$PYBIN/shinylive" --version
-
     - name: Install R dependencies
       uses: r-lib/actions/setup-r-dependencies@v2
       with:
         extra-packages: |
           ${{ inputs.shinyelectron-source }}
           any::shinylive
+
+    - name: Install Python dependencies
+      if: steps.resolve.outputs.app-type == 'py-shiny'
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install shiny shinylive
 
     - name: Verify Shiny app exists
       shell: bash
