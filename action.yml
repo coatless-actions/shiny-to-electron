@@ -186,7 +186,23 @@ runs:
       shell: bash
       run: |
         python -m pip install --upgrade pip
-        python -m pip install shiny shinylive
+        # pip can intermittently leave shinylive partially installed under heavy
+        # concurrent load (for example a large build matrix), which then surfaces
+        # downstream as "No module named shinylive" during the shinylive export.
+        # Retry until the module actually imports.
+        for attempt in 1 2 3; do
+          python -m pip install shiny shinylive
+          if python -c "import shinylive" 2>/dev/null; then
+            echo "shinylive import verified (attempt $attempt)"
+            break
+          fi
+          echo "shinylive not importable after attempt $attempt; reinstalling..."
+          python -m pip install --force-reinstall --no-cache-dir shiny shinylive
+        done
+        python -c "import shinylive" || {
+          echo "::error::shinylive could not be imported after installation"
+          exit 1
+        }
 
     - name: Verify Shiny app exists
       shell: bash
