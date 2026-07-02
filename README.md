@@ -188,8 +188,9 @@ The action is a [composite action](https://docs.github.com/en/actions/creating-a
 4. Set up Node.js via [`actions/setup-node`](https://github.com/actions/setup-node).
 5. Install Linux system dependencies (`libcurl`, `libxml2`, `libssl`).
 6. Install `shinyelectron` and `shinylive` via [`r-lib/actions/setup-r-dependencies`](https://github.com/r-lib/actions).
-7. Run `shinyelectron::export()` with the resolved arguments.
-8. Upload the build output as a workflow artifact.
+7. For shinylive R apps, detect the app's own package dependencies with `shinyelectron::app_dependencies()` and install any that are missing, since `shinylive::export()` compiles the WebAssembly bundle from installed packages.
+8. Run `shinyelectron::export()` with the resolved arguments.
+9. Upload the build output as a workflow artifact.
 
 If you need finer control than the action provides, use the [bundled template](https://github.com/coatless-rpkg/shinyelectron/blob/main/inst/templates/github-actions-build.yml) directly.
 

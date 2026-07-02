@@ -181,6 +181,27 @@ runs:
           ${{ inputs.shinyelectron-source }}
           any::shinylive
 
+    # shinylive::export() compiles the WebAssembly bundle from the packages
+    # installed in this session, so an R app's own dependencies must be present
+    # before conversion. shinyelectron detects them from the app source.
+    - name: Install app R dependencies (shinylive)
+      if: steps.resolve.outputs.app-type == 'r-shiny' && (inputs.runtime-strategy == 'shinylive' || inputs.runtime-strategy == '')
+      shell: Rscript {0}
+      run: |
+        pkgs <- shinyelectron::app_dependencies("${{ inputs.appdir }}", app_type = "r-shiny")
+        pkgs <- setdiff(pkgs, rownames(installed.packages()))
+        if (length(pkgs) == 0) {
+          message("No additional app dependencies to install.")
+        } else {
+          message("Installing app dependencies for shinylive: ", paste(pkgs, collapse = ", "))
+          repos <- getOption("repos")
+          if (is.null(repos[["CRAN"]]) || !nzchar(repos[["CRAN"]]) ||
+              identical(unname(repos[["CRAN"]]), "@CRAN@")) {
+            repos <- c(CRAN = "https://cloud.r-project.org")
+          }
+          install.packages(pkgs, repos = repos)
+        }
+
     - name: Install Python dependencies
       if: steps.resolve.outputs.app-type == 'py-shiny'
       shell: bash
