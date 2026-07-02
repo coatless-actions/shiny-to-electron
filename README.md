@@ -178,9 +178,9 @@ The action autodetects `py-shiny` when it sees `app.py`, `requirements.txt`, or 
     echo "Artifact:     ${{ steps.build.outputs.artifact-name }}"
 ```
 
-## How it works
+## What runs on a fresh runner
 
-The action is a [composite action](https://docs.github.com/en/actions/creating-actions/creating-a-composite-action) that runs the same recipe as the bundled `inst/templates/github-actions-build.yml` workflow shipped with `shinyelectron`:
+The action is a [composite action](https://docs.github.com/en/actions/creating-actions/creating-a-composite-action). Each build runs these steps:
 
 1. Resolve platform, architecture, app type, and names from inputs and runner context.
 2. Set up R via [`r-lib/actions/setup-r`](https://github.com/r-lib/actions).
@@ -192,7 +192,7 @@ The action is a [composite action](https://docs.github.com/en/actions/creating-a
 8. Run `shinyelectron::export()` with the resolved arguments.
 9. Upload the build output as a workflow artifact.
 
-If you need finer control than the action provides, use the [bundled template](https://github.com/coatless-rpkg/shinyelectron/blob/main/inst/templates/github-actions-build.yml) directly.
+If you need finer control than the action provides, drive `shinyelectron::export()` from your own workflow instead. The [Building with GitHub Actions](https://r-pkg.thecoatlessprofessor.com/shinyelectron/articles/github-actions.html) article walks through the full hand-rolled recipe.
 
 ## Versioning
 
